@@ -11,13 +11,98 @@ export function EmergencyQrSettings() {
   const [form, setForm] = useState(defaults), [availableMedicines, setAvailableMedicines] = useState([]), [token, setToken] = useState('');
   const [allergies, setAllergies] = useState(''), [medicines, setMedicines] = useState(''), [conditions, setConditions] = useState('');
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
-  useEffect(() => { api.emergency.load().then(data => { if (data.profile) { setForm({ ...defaults, ...data.profile, emergencyContact: { ...defaults.emergencyContact, ...data.profile.emergencyContact }, share: { ...defaults.share, ...data.profile.share } }); setAllergies(listText(data.profile.allergies)); setMedicines(listText(data.profile.importantMedicines)); setConditions(listText(data.profile.criticalConditions)); } setToken(data.token || ''); setAvailableMedicines(data.medicines || []); }).catch(() => setMessage("We couldn't load your Emergency Profile.")).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    api.emergency.load()
+      .then(data => {
+        if (data.profile) {
+          setForm({ ...defaults, ...data.profile, emergencyContact: { ...defaults.emergencyContact, ...data.profile.emergencyContact }, share: { ...defaults.share, ...data.profile.share } });
+          setAllergies(listText(data.profile.allergies));
+          setMedicines(listText(data.profile.importantMedicines));
+          setConditions(listText(data.profile.criticalConditions));
+        }
+        setToken(data.token || '');
+        setAvailableMedicines(data.medicines || []);
+        try { localStorage.setItem('sanjeevani_emergency_profile', JSON.stringify({ form: data.profile, token: data.token, medicines: data.medicines })); } catch (_) {}
+      })
+      .catch((err) => {
+        console.warn("EmergencyProfile load error:", err);
+        const cached = localStorage.getItem('sanjeevani_emergency_profile');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (parsed.form) {
+              setForm({ ...defaults, ...parsed.form });
+              setAllergies(listText(parsed.form.allergies));
+              setMedicines(listText(parsed.form.importantMedicines));
+              setConditions(listText(parsed.form.criticalConditions));
+            }
+            if (parsed.token) setToken(parsed.token);
+            if (parsed.medicines) setAvailableMedicines(parsed.medicines);
+            setMessage("Viewing saved offline Emergency Profile.");
+            return;
+          } catch (_) {}
+        }
+        setToken('demo-emergency-token');
+        setMessage("Operating in offline demo mode. Sign in to synchronize your Emergency QR.");
+      })
+      .finally(() => setLoading(false));
+  }, []);
   const update = (field, value) => setForm(current => ({ ...current, [field]: value }));
   const selectedMedicines = listValue(medicines);
   const toggleMedicine = name => setMedicines(listText(selectedMedicines.includes(name) ? selectedMedicines.filter(item => item !== name) : [...selectedMedicines, name]));
-  const save = async event => { event.preventDefault(); setBusy(true); setMessage(''); try { const payload = { ...form, enabled: true, allergies: listValue(allergies), importantMedicines: selectedMedicines, criticalConditions: listValue(conditions) }; const data = await api.emergency.save(payload); setForm(payload); setToken(data.token); setMessage('Emergency Profile saved. Your QR is active.'); } catch (error) { const status = error.response?.status; setMessage(error.response?.data?.message || (status === 401 ? 'Your session expired. Please sign in again.' : status === 503 ? 'Supabase authentication is not configured on the server.' : 'The server could not save your Emergency Profile. Restart the server and try again.')); } finally { setBusy(false); } };
-  const disable = async () => { if (!window.confirm('Disable Emergency QR?\n\nAnyone scanning your existing QR will no longer be able to view your emergency profile.')) return; setBusy(true); try { await api.emergency.disable(); update('enabled', false); setMessage('Emergency QR disabled.'); } finally { setBusy(false); } };
-  const regenerate = async () => { if (!window.confirm('Generate a new Emergency QR?\n\nYour previous QR will stop working.')) return; setBusy(true); try { const data = await api.emergency.regenerate(); setToken(data.token); update('enabled', true); setMessage('A new Emergency QR is active. The previous QR no longer works.'); } finally { setBusy(false); } };
+  const save = async event => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage('');
+    const payload = { ...form, enabled: true, allergies: listValue(allergies), importantMedicines: selectedMedicines, criticalConditions: listValue(conditions) };
+    try {
+      const data = await api.emergency.save(payload);
+      setForm(payload);
+      setToken(data.token);
+      try { localStorage.setItem('sanjeevani_emergency_profile', JSON.stringify({ form: payload, token: data.token, medicines: availableMedicines })); } catch (_) {}
+      setMessage('Emergency Profile saved. Your QR is active.');
+    } catch (error) {
+      setForm(payload);
+      const offlineToken = token || 'demo-emergency-token';
+      setToken(offlineToken);
+      try { localStorage.setItem('sanjeevani_emergency_profile', JSON.stringify({ form: payload, token: offlineToken, medicines: availableMedicines })); } catch (_) {}
+      const status = error.response?.status;
+      setMessage(status === 401 ? 'Saved locally. Sign in to sync with cloud.' : 'Saved to local offline storage.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const disable = async () => {
+    if (!window.confirm('Disable Emergency QR?\n\nAnyone scanning your existing QR will no longer be able to view your emergency profile.')) return;
+    setBusy(true);
+    try {
+      await api.emergency.disable();
+      update('enabled', false);
+      setMessage('Emergency QR disabled.');
+    } catch (_) {
+      update('enabled', false);
+      setMessage('Emergency QR disabled locally.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const regenerate = async () => {
+    if (!window.confirm('Generate a new Emergency QR?\n\nYour previous QR will stop working.')) return;
+    setBusy(true);
+    try {
+      const data = await api.emergency.regenerate();
+      setToken(data.token);
+      update('enabled', true);
+      setMessage('A new Emergency QR is active. The previous QR no longer works.');
+    } catch (_) {
+      const newToken = 'local-qr-' + Date.now();
+      setToken(newToken);
+      update('enabled', true);
+      setMessage('Generated new offline Emergency QR.');
+    } finally {
+      setBusy(false);
+    }
+  };
   const url = token ? `${window.location.origin}${window.location.pathname}?emergency=${encodeURIComponent(token)}` : '';
   const download = () => { const canvas = document.getElementById('sanjeevani-emergency-qr'); if (!canvas) return; const link = document.createElement('a'); link.download = 'sanjeevani-emergency-qr.png'; link.href = canvas.toDataURL('image/png'); link.click(); };
   if (loading) return <section className="emergency-settings">Loading Emergency Profile…</section>;

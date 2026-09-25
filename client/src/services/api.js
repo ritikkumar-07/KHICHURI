@@ -1,12 +1,40 @@
-﻿import axios from "axios";
+import axios from "axios";
 import { FIRST_AID } from "./offlineStorage";
-import { supabase } from "./supabase";
+import { supabase, isSupabaseConfigured } from "./supabase";
 
+const rawBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
+const baseURL = rawBaseUrl.endsWith("/api") ? rawBaseUrl.slice(0, -4) : rawBaseUrl;
 
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000",
+  baseURL,
   timeout: 60000,
 });
+
+// ---------------------------------------------------------------------------
+// Request Interceptor: dynamically fetches and attaches active Supabase token
+// ---------------------------------------------------------------------------
+client.interceptors.request.use(
+  async (config) => {
+    // Normalize accidental double /api prefixes if baseURL ends with /api
+    if (config.url && config.url.startsWith("/api/api/")) {
+      config.url = config.url.replace(/^\/api\/api\//, "/api/");
+    }
+
+    try {
+      if (isSupabaseConfigured && supabase) {
+        const { data } = await supabase.auth.getSession();
+        const session = data?.session;
+        if (session?.access_token && !config.headers.Authorization) {
+          config.headers.Authorization = `Bearer ${session.access_token}`;
+        }
+      }
+    } catch (err) {
+      console.warn("Could not attach auth token:", err);
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // ---------------------------------------------------------------------------
 // Health-tracker owner key (stable per-browser, stored in localStorage)
@@ -42,12 +70,14 @@ const authHeaders = async () => {
 const getDynamicFallbackFacilities = (lat = 22.5726, lng = 88.3639) => {
   const dist = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
     return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1);
   };
 
@@ -92,8 +122,6 @@ const api = {
 
     let overpassResults = [];
     try {
-      // Use axios-native timeout (not AbortController) so the request is
-      // cancelled cleanly — no dangling "pending → canceled" in DevTools.
       const res = await axios.post(
         "https://overpass-api.de/api/interpreter",
         `data=${encodeURIComponent(query)}`,
@@ -125,27 +153,33 @@ const api = {
           const a =
             Math.sin(dLat / 2) * Math.sin(dLat / 2) +
             Math.cos((lat * Math.PI) / 180) *
-            Math.cos((itemLat * Math.PI) / 180) *
-            Math.sin(dLng / 2) *
-            Math.sin(dLng / 2);
+              Math.cos((itemLat * Math.PI) / 180) *
+              Math.sin(dLng / 2) *
+              Math.sin(dLng / 2);
           const distance = (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1);
 
           let type = "Clinic";
-          if (tags.amenity === "hospital" || tags.healthcare === "hospital")       type = "Hospital";
-          else if (tags.amenity === "pharmacy" || tags.healthcare === "pharmacy")  type = "Pharmacy";
-          else if (tags.amenity === "doctors"  || tags.healthcare === "doctor")    type = "Doctor";
+          if (tags.amenity === "hospital" || tags.healthcare === "hospital") type = "Hospital";
+          else if (tags.amenity === "pharmacy" || tags.healthcare === "pharmacy") type = "Pharmacy";
+          else if (tags.amenity === "doctors" || tags.healthcare === "doctor") type = "Doctor";
           else if (tags.healthcare === "blood_bank" || tags.amenity === "blood_bank") type = "Blood Bank";
           else if (tags.healthcare === "centre") type = "Clinic";
 
           const isHospital = type === "Hospital";
-          const rawName    = tags.name || tags["name:en"];
-          const name       = rawName || (isHospital ? "Local Hospital" : `${type} Facility`);
+          const rawName = tags.name || tags["name:en"];
+          const name = rawName || (isHospital ? "Local Hospital" : `${type} Facility`);
           if (rawName && seenNames.has(rawName)) return null;
           if (rawName) seenNames.add(rawName);
 
           return {
-            id: el.id.toString(), name, type,
-            latitude: itemLat, longitude: itemLng, lat: itemLat, lng: itemLng, distance,
+            id: el.id.toString(),
+            name,
+            type,
+            latitude: itemLat,
+            longitude: itemLng,
+            lat: itemLat,
+            lng: itemLng,
+            distance,
             icuBeds: isHospital ? Math.floor(Math.random() * 15) + 1 : 0,
             emergency: tags.emergency === "yes" || isHospital,
             address: tags["addr:street"] || tags["addr:full"] || tags["addr:suburb"] || "Local Area",
@@ -156,7 +190,10 @@ const api = {
 
     const combined = [...parseOverpassElements(overpassResults)];
     for (const fb of fallbacks) {
-      if (!seenNames.has(fb.name)) { seenNames.add(fb.name); combined.push(fb); }
+      if (!seenNames.has(fb.name)) {
+        seenNames.add(fb.name);
+        combined.push(fb);
+      }
     }
     return combined.sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
   },
@@ -190,7 +227,6 @@ const api = {
   // Voice transcription (audio blob → Groq Whisper, fallback local)
   // ------------------------------------------------------------------
   transcribe: (audio, language) => {
-
     const f = new FormData();
     f.append("audio", audio, "voice.webm");
     f.append("language", language);
@@ -233,18 +269,30 @@ const api = {
   firstAid: () => FIRST_AID,
 
   // ------------------------------------------------------------------
-  // Health Tracker (requires x-health-owner-key header on every call)
+  // Admin Endpoints
   // ------------------------------------------------------------------
-
-  admin: { me: async () => client.get("/api/admin/me", { headers: await authHeaders() }).then(response => response.data.data) },
-  emergency: {
-    public: token => client.get(`/api/emergency/${encodeURIComponent(token)}`).then(response => response.data.data),
-    load: () => healthRequest("get", "/api/health-tracker/emergency-profile"),
-    save: data => healthRequest("put", "/api/health-tracker/emergency-profile", data),
-    disable: () => healthRequest("post", "/api/health-tracker/emergency-profile/disable"),
-    regenerate: () => healthRequest("post", "/api/health-tracker/emergency-profile/regenerate")
+  admin: {
+    me: async () =>
+      client
+        .get("/api/admin/me", { headers: await authHeaders() })
+        .then((response) => response.data.data),
   },
 
+  // ------------------------------------------------------------------
+  // Emergency Profile & Public Scan QR
+  // ------------------------------------------------------------------
+  emergency: {
+    public: (token) =>
+      client.get(`/api/emergency/${encodeURIComponent(token)}`).then((response) => response.data.data),
+    load: () => healthRequest("get", "/api/health-tracker/emergency-profile"),
+    save: (data) => healthRequest("put", "/api/health-tracker/emergency-profile", data),
+    disable: () => healthRequest("post", "/api/health-tracker/emergency-profile/disable"),
+    regenerate: () => healthRequest("post", "/api/health-tracker/emergency-profile/regenerate"),
+  },
+
+  // ------------------------------------------------------------------
+  // Health Tracker (requires x-health-owner-key header on every call)
+  // ------------------------------------------------------------------
   healthTracker: {
     load:              ()           => healthRequest("get",    "/api/health-tracker"),
     addCareMember:     (data)       => healthRequest("post",   "/api/health-tracker/care-circle", data),
@@ -267,6 +315,22 @@ const api = {
   },
 
   // ------------------------------------------------------------------
+  // Women's Health
+  // ------------------------------------------------------------------
+  womensHealth: {
+    addCycle: (data) => healthRequest("post", "/api/health-tracker/womens-health/cycles", data),
+    updateCycle: (id, data) => healthRequest("patch", `/api/health-tracker/womens-health/cycles/${id}`, data),
+    deleteCycle: (id) => healthRequest("delete", `/api/health-tracker/womens-health/cycles/${id}`),
+    saveLog: (data) => healthRequest("post", "/api/health-tracker/womens-health/logs", data),
+    deleteLog: (id) => healthRequest("delete", `/api/health-tracker/womens-health/logs/${id}`),
+    addCondition: (data) => healthRequest("post", "/api/health-tracker/womens-health/conditions", data),
+    updateCondition: (id, data) => healthRequest("patch", `/api/health-tracker/womens-health/conditions/${id}`, data),
+    deleteCondition: (id) => healthRequest("delete", `/api/health-tracker/womens-health/conditions/${id}`),
+    addAppointment: (data) => healthRequest("post", "/api/health-tracker/womens-health/appointments", data),
+    deleteAppointment: (id) => healthRequest("delete", `/api/health-tracker/womens-health/appointments/${id}`),
+  },
+
+  // ------------------------------------------------------------------
   // Medicine Safety
   // ------------------------------------------------------------------
   medicines: {
@@ -277,4 +341,5 @@ const api = {
   },
 };
 
-export { api };
+export { api, client };
+export default api;

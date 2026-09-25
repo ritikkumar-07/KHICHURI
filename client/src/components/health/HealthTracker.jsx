@@ -99,9 +99,56 @@ function DoctorSummary({ plan, profile }) {
 export function HealthTracker({ onNavigate }) {
   const [profile, setProfile] = useState(null), [selectedId, setSelectedId] = useState(null), [tab, setTab] = useState("Overview"), [setup, setSetup] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [range, setRange] = useState("30D"), [metricKey, setMetricKey] = useState("");
-  const load = async () => { setError(""); try { const data = await api.healthTracker.load(); setProfile({ plans: data.plans || [], history: (data.history || []).filter(item => !item.patientProfileId), womensHealth: data.womensHealth || {} }); setSelectedId(current => current || idOf(data.plans?.find(plan => plan.status === "active") || data.plans?.[0])); } catch { setError("We couldn't load your health records."); } };
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api.healthTracker.load();
+      const loadedProfile = {
+        plans: data.plans || [],
+        history: (data.history || []).filter(item => !item.patientProfileId),
+        womensHealth: data.womensHealth || {}
+      };
+      setProfile(loadedProfile);
+      setSelectedId(current => current || idOf(data.plans?.find(plan => plan.status === "active") || data.plans?.[0]));
+      try { localStorage.setItem("sanjeevani_health_tracker_profile", JSON.stringify(loadedProfile)); } catch (_) {}
+    } catch (err) {
+      console.warn("HealthTracker load error:", err);
+      const cached = localStorage.getItem("sanjeevani_health_tracker_profile");
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setProfile(parsed);
+          setSelectedId(current => current || idOf(parsed.plans?.find(plan => plan.status === "active") || parsed.plans?.[0]));
+          setError("Viewing saved offline health records.");
+          return;
+        } catch (_) {}
+      }
+      const demoPlan = {
+        id: "demo-plan-1",
+        type: "General Health",
+        title: "Daily Wellness Tracking",
+        conditionName: "General Wellness",
+        status: "active",
+        startDate: TODAY(),
+        goal: "Maintain daily wellness and energy.",
+        metrics: PRESETS["General Health"].map(metricFromPreset),
+        checkIns: [],
+        milestones: []
+      };
+      setProfile({ plans: [demoPlan], history: [], womensHealth: {} });
+      setSelectedId("demo-plan-1");
+      setError("Operating in offline demo mode. Sign in to synchronize your health records.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => { load(); }, []);
   const mutate = async (method, args) => { setBusy(true); setError(""); try { await api.healthTracker[method](...args); await load(); setBusy(false); return true; } catch (requestError) { setError(requestError.response?.data?.message || "We couldn't save that health record."); setBusy(false); return false; } };
+  if (loading && !profile) return <section className="tracker-loading" aria-live="polite">Loading health records…</section>;
   if (!profile) return <section className="tracker-loading" aria-live="polite">{error ? <><p>{error}</p><button className="button primary" onClick={load}>Try Again</button></> : "Loading health records…"}</section>;
   const plan = profile.plans.find(item => idOf(item) === selectedId) || profile.plans[0];
   const active = profile.plans.filter(item => item.status === "active"), past = profile.plans.filter(item => item.status === "completed");

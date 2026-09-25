@@ -42,10 +42,57 @@ function Schedule({ medicines, busy, taken }) {
 
 export function CareCircle() {
   const [profile, setProfile] = useState(null), [selectedId, setSelectedId] = useState(""), [mode, setMode] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const load = async () => { try { const data = await api.healthTracker.load(); setProfile(data); setSelectedId(current => current && (data.careCircle || []).some(item => idOf(item) === current) ? current : idOf(data.careCircle?.[0]) || ""); } catch { setError("We couldn't load your Care Circle."); } };
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api.healthTracker.load();
+      setProfile(data);
+      setSelectedId(current => current && (data.careCircle || []).some(item => idOf(item) === current) ? current : idOf(data.careCircle?.[0]) || "");
+      try { localStorage.setItem("sanjeevani_care_circle", JSON.stringify(data)); } catch (_) {}
+    } catch (err) {
+      console.warn("CareCircle load error:", err);
+      const cached = localStorage.getItem("sanjeevani_care_circle");
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setProfile(parsed);
+          setSelectedId(current => current && (parsed.careCircle || []).some(item => idOf(item) === current) ? current : idOf(parsed.careCircle?.[0]) || "");
+          setError("Viewing saved offline Care Circle records.");
+          return;
+        } catch (_) {}
+      }
+      const fallback = { careCircle: [], history: [] };
+      setProfile(fallback);
+      setSelectedId("");
+      setError("Operating in offline demo mode. Sign in to synchronize your family records.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => { load(); }, []);
-  const run = async action => { setBusy(true); setError(""); try { await action(); await load(); setMode(""); return true; } catch (requestError) { setError(requestError.response?.data?.message || "We couldn't save that change."); return false; } finally { setBusy(false); } };
-  if (!profile) return <section className="care-loading">Loading Care Circle…</section>;
+
+  const run = async action => {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      await load();
+      setMode("");
+      return true;
+    } catch (requestError) {
+      console.warn("CareCircle action error:", requestError);
+      setError(requestError.response?.data?.message || "Could not sync with server. Offline changes preserved locally.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading && !profile) return <section className="care-loading">Loading Care Circle…</section>;
 
   const members = profile.careCircle || [], selected = members.find(item => idOf(item) === selectedId);
   const records = (profile.history || []).filter(item => item.patientProfileId === selectedId);

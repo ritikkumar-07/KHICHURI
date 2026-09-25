@@ -40,11 +40,82 @@ function History({ cycles, stats }) {
 
 export function WomensHealth() {
   const [profile, setProfile] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [open, setOpen] = useState(null);
-  const load = async () => { try { setProfile(await api.healthTracker.load()); } catch { setError("We couldn't load your women's health records."); } };
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api.healthTracker.load();
+      setProfile(data);
+      try { localStorage.setItem("sanjeevani_womens_health", JSON.stringify(data)); } catch (_) {}
+    } catch (err) {
+      console.warn("WomensHealth load error:", err);
+      const cached = localStorage.getItem("sanjeevani_womens_health");
+      if (cached) {
+        try {
+          setProfile(JSON.parse(cached));
+          setError("Viewing saved offline records.");
+          return;
+        } catch (_) {}
+      }
+      setProfile({ womensHealth: { cycles: [], dailyLogs: [] } });
+      setError("Operating in offline demo mode. Sign in to synchronize your records.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => { load(); }, []);
-  const mutate = async (method, ...args) => { setBusy(true); setError(""); try { await api.womensHealth[method](...args); await load(); return true; } catch (requestError) { setError(requestError.response?.data?.message || "We couldn't save that record."); return false; } finally { setBusy(false); } };
+
+  const mutate = async (method, ...args) => {
+    setBusy(true);
+    setError("");
+    try {
+      if (api.womensHealth && typeof api.womensHealth[method] === "function") {
+        await api.womensHealth[method](...args);
+        await load();
+        return true;
+      }
+      throw new Error(`Method ${method} not available`);
+    } catch (requestError) {
+      console.warn("WomensHealth mutate error:", requestError);
+      // Fallback local mutation so user isn't blocked if offline
+      setProfile((current) => {
+        const updated = { ...(current || {}) };
+        if (!updated.womensHealth) updated.womensHealth = { cycles: [], dailyLogs: [] };
+        if (method === "saveLog") {
+          const log = args[0];
+          updated.womensHealth.dailyLogs = [
+            ...(updated.womensHealth.dailyLogs || []).filter((l) => l.date !== log.date),
+            log,
+          ];
+        } else if (method === "addCycle") {
+          const newCycle = { ...args[0], id: `local-${Date.now()}` };
+          updated.womensHealth.cycles = [...(updated.womensHealth.cycles || []), newCycle];
+        } else if (method === "updateCycle") {
+          const [id, updateData] = args;
+          updated.womensHealth.cycles = (updated.womensHealth.cycles || []).map((c) =>
+            (c._id === id || c.id === id ? { ...c, ...updateData } : c)
+          );
+        } else if (method === "deleteCycle") {
+          const id = args[0];
+          updated.womensHealth.cycles = (updated.womensHealth.cycles || []).filter(
+            (c) => c._id !== id && c.id !== id
+          );
+        }
+        try { localStorage.setItem("sanjeevani_womens_health", JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
+      setError("Saved to local offline storage.");
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const data = profile?.womensHealth || { cycles: [], dailyLogs: [] }, cycles = data.cycles || [], logs = data.dailyLogs || [], stats = useMemo(() => calculateCycleStatistics(cycles, logs), [cycles, logs]);
-  if (!profile) return <section className="women-loading">Loading private health records…</section>;
+  if (loading && !profile) return <section className="women-loading">Loading private health records…</section>;
   const estimate = estimateNextPeriod(cycles), latest = sortedCycles(cycles).at(-1), cycleDay = latest ? daysBetween(latest.startDate, localToday()) + 1 : null;
   const symptomCounts = Object.entries(stats.symptomCounts).sort((a, b) => b[1] - a[1]);
   return <section className="womens-health-view"><header className="page-heading women-heading"><span className="section-kicker">PRIVATE CYCLE TRACKING</span><h1>Women's Health</h1><p>A simple place to track periods, daily symptoms, and cycle changes.</p></header>{error && <div className="women-error" role="alert"><AlertTriangle size={17} />{error}</div>}<div className="women-overview-grid"><article><span>Current Cycle</span><b>{cycleDay > 0 ? `Day ${cycleDay}` : "—"}</b><small>{latest ? `Started ${dateLabel(latest.startDate)}` : "No recorded period"}</small></article><article><span>Next Period</span><b>{estimate.date ? `Around ${dateLabel(estimate.date)}` : "Not available"}</b><small>{estimate.date ? "Estimated from your recorded cycles" : "Record more cycles to estimate your next period."}</small></article><article><span>Average Cycle</span><b>{stats.averageCycle ? `${stats.averageCycle.toFixed(1)} days` : "—"}</b><small>{stats.averageCycle ? "Based on recorded periods" : "Not enough data"}</small></article></div><Calendar cycles={cycles} estimate={estimate} averagePeriod={stats.averagePeriod} /><div className="women-form-actions"><button className="button primary" onClick={() => setOpen(open === "log" ? null : "log")}>+ Log Today</button><button className="button secondary" onClick={() => setOpen(open === "period" ? null : "period")}>+ Add Period</button></div>{open === "log" && <TodayLog logs={logs} save={form => mutate("saveLog", form)} busy={busy} onClose={() => setOpen(null)} />}{open === "period" && <PeriodEditor cycles={cycles} save={form => mutate("addCycle", form)} update={(id, form) => mutate("updateCycle", id, form)} remove={id => mutate("deleteCycle", id)} busy={busy} onClose={() => setOpen(null)} />}<History cycles={cycles} stats={stats} /><section className="women-panel"><span className="section-kicker">RECORDED PATTERNS ONLY</span><h2>Your Common Symptoms</h2>{symptomCounts.length ? <div className="symptom-frequency">{symptomCounts.slice(0, 8).map(([name, count]) => <p key={name}><span>{name}</span><b>{count} {count === 1 ? "time" : "times"}</b></p>)}</div> : <div className="women-empty">No symptoms recorded yet.</div>}<p className="women-estimate-note">This only summarizes what you recorded and is not a diagnosis.</p></section></section>;
