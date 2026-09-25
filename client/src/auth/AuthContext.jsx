@@ -7,9 +7,17 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!supabase) { setLoading(false); return undefined; }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        setSession(data?.session ?? null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.warn('Supabase auth session load warning:', err);
+        setLoading(false);
+      });
     const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
-    return () => data.subscription.unsubscribe();
+    return () => data?.subscription?.unsubscribe();
   }, []);
   const value = useMemo(() => ({ session, user: session?.user || null, loading, isHospitalAdmin: session?.user?.app_metadata?.role === 'hospital_admin' }), [session, loading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
