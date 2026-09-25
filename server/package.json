@@ -1,0 +1,28 @@
+{
+  "name": "sanjeevani-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "build": "node --check src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@google/genai": "^2.18.0",
+    "@google/generative-ai": "^0.21.0",
+    "@supabase/ssr": "^0.12.5",
+    "@supabase/supabase-js": "^2.112.4",
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "groq-sdk": "^1.6.0",
+    "mongoose": "^8.9.3",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^2.4.5",
+    "socket.io": "^4.8.1",
+    "tesseract.js": "^7.0.0"
+  }
+}
