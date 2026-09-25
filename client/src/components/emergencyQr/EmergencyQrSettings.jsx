@@ -11,6 +11,39 @@ export function EmergencyQrSettings() {
   const [form, setForm] = useState(defaults), [availableMedicines, setAvailableMedicines] = useState([]), [token, setToken] = useState('');
   const [allergies, setAllergies] = useState(''), [medicines, setMedicines] = useState(''), [conditions, setConditions] = useState('');
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
+  const [customBaseUrl, setCustomBaseUrl] = useState(() => {
+    try {
+      return localStorage.getItem('sanjeevani_qr_base_url') || '';
+    } catch (_) {
+      return '';
+    }
+  });
+  const [directTextMode, setDirectTextMode] = useState(() => {
+    try {
+      return localStorage.getItem('sanjeevani_qr_text_mode') === 'true';
+    } catch (_) {
+      return false;
+    }
+  });
+
+  const handleCustomBaseUrlChange = value => {
+    setCustomBaseUrl(value);
+    try {
+      if (value.trim()) {
+        localStorage.setItem('sanjeevani_qr_base_url', value.trim());
+      } else {
+        localStorage.removeItem('sanjeevani_qr_base_url');
+      }
+    } catch (_) {}
+  };
+
+  const handleDirectTextModeToggle = checked => {
+    setDirectTextMode(checked);
+    try {
+      localStorage.setItem('sanjeevani_qr_text_mode', checked ? 'true' : 'false');
+    } catch (_) {}
+  };
+
   useEffect(() => {
     api.emergency.load()
       .then(data => {
@@ -103,7 +136,47 @@ export function EmergencyQrSettings() {
       setBusy(false);
     }
   };
-  const url = token ? `${window.location.origin}${window.location.pathname}?emergency=${encodeURIComponent(token)}` : '';
+  const getAppBaseUrl = () => {
+    if (customBaseUrl && customBaseUrl.trim()) {
+      return customBaseUrl.trim().replace(/\/$/, '');
+    }
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return window.location.origin;
+    }
+    const envUrl = (
+      import.meta.env.VITE_APP_URL ||
+      import.meta.env.VITE_PUBLIC_URL ||
+      import.meta.env.VITE_CLIENT_URL ||
+      ''
+    ).trim().replace(/\/$/, '');
+    if (envUrl) return envUrl;
+    return typeof window !== 'undefined' ? window.location.origin : '';
+  };
+
+  const getDirectMedicalIdText = () => {
+    const nameVal = form.displayName?.trim() || 'Not specified';
+    const bloodVal = form.bloodGroup || 'Not provided';
+    const allergiesList = allergies?.trim()
+      ? allergies.split(/[\n,]/).map(s => s.trim()).filter(Boolean).join(', ')
+      : 'None listed';
+    const contactName = form.emergencyContact?.name?.trim() || '';
+    const contactPhone = form.emergencyContact?.phone?.trim() || '';
+    const contactVal = (contactName && contactPhone)
+      ? `${contactName} - ${contactPhone}`
+      : (contactPhone || contactName || 'None provided');
+
+    return [
+      'EMERGENCY MEDICAL ID',
+      `Name: ${nameVal}`,
+      `Blood Group: ${bloodVal}`,
+      `Allergies: ${allergiesList}`,
+      `ICE Contact: ${contactVal}`
+    ].join('\n');
+  };
+
+  const appBaseUrl = getAppBaseUrl();
+  const url = token ? `${appBaseUrl}${window.location.pathname}?emergency=${encodeURIComponent(token)}` : '';
+  const qrValue = directTextMode ? getDirectMedicalIdText() : url;
   const download = () => { const canvas = document.getElementById('sanjeevani-emergency-qr'); if (!canvas) return; const link = document.createElement('a'); link.download = 'sanjeevani-emergency-qr.png'; link.href = canvas.toDataURL('image/png'); link.click(); };
   if (loading) return <section className="emergency-settings">Loading Emergency Profile…</section>;
   return <section className="emergency-settings">
@@ -119,6 +192,29 @@ export function EmergencyQrSettings() {
       <fieldset><legend>Emergency Contact</legend><div className="emergency-contact-grid"><label>Name<input maxLength="100" value={form.emergencyContact.name} onChange={event => update('emergencyContact', { ...form.emergencyContact, name: event.target.value })} /></label><label>Relationship (optional)<input maxLength="60" value={form.emergencyContact.relationship} onChange={event => update('emergencyContact', { ...form.emergencyContact, relationship: event.target.value })} /></label><label>Phone Number<input type="tel" maxLength="30" value={form.emergencyContact.phone} onChange={event => update('emergencyContact', { ...form.emergencyContact, phone: event.target.value })} /></label></div></fieldset>
       <fieldset><legend>Information visible when scanned</legend><div className="emergency-share-grid">{[['name','Share Name'],['bloodGroup','Share Blood Group'],['allergies','Share Allergies'],['medicines','Share Important Medicines'],['conditions','Share Critical Conditions'],['emergencyContact','Share Emergency Contact']].map(([key,label]) => <label key={key}><input type="checkbox" checked={form.share[key]} onChange={event => update('share', { ...form.share, [key]: event.target.checked })} />{label}</label>)}</div></fieldset>
       <button className="button primary" disabled={busy}><QrCode size={17} />{token ? 'Save Emergency Profile' : 'Generate Emergency QR'}</button>{message && <p className="emergency-message" role="status">{message}</p>}
-    </form><aside className="qr-panel"><h2>Your Emergency QR</h2>{token ? <><div className={!form.enabled ? 'qr-disabled' : ''}><QRCodeCanvas id="sanjeevani-emergency-qr" value={url} size={240} level="H" marginSize={3} /></div><b>{form.enabled ? 'Active' : 'Disabled'}</b><p>The QR contains only a secure random link—not medical information.</p><div className="qr-actions"><button className="button secondary" onClick={download}><Download size={16} />Download QR</button><button className="button secondary" onClick={() => window.print()}><Printer size={16} />Print</button><button className="button secondary" onClick={regenerate} disabled={busy}><RefreshCw size={16} />Generate New QR</button>{form.enabled && <button className="button danger-button" onClick={disable} disabled={busy}><ShieldOff size={16} />Disable Emergency QR</button>}</div></> : <p>Save your profile to generate its secure QR.</p>}</aside></div>
+    </form><aside className="qr-panel"><h2>Your Emergency QR</h2>
+      <div className="qr-mode-card" style={{ display: 'grid', gap: '10px', marginBottom: '16px', padding: '12px', background: '#f5f2ec', borderRadius: '12px', border: '1px solid #d8d2c8', textAlign: 'left' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>
+          <input
+            type="checkbox"
+            checked={directTextMode}
+            onChange={e => handleDirectTextModeToggle(e.target.checked)}
+          />
+          Direct Medical ID (No Internet/Server Needed)
+        </label>
+        {!directTextMode && (
+          <label style={{ display: 'grid', gap: '4px', fontSize: '12px' }}>
+            <span style={{ fontWeight: 600, color: '#5f5b55' }}>Custom QR URL / Tunnel Base</span>
+            <input
+              type="text"
+              placeholder="e.g. https://my-app.loca.lt or http://10.182.226.40:5173"
+              value={customBaseUrl}
+              onChange={e => handleCustomBaseUrlChange(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', fontSize: '12px', borderRadius: '8px', border: '1px solid #d8d2c8', background: '#fff' }}
+            />
+          </label>
+        )}
+      </div>
+      {(directTextMode || token) ? <><div className={!form.enabled && !directTextMode ? 'qr-disabled' : ''}><QRCodeCanvas id="sanjeevani-emergency-qr" value={qrValue} size={240} level="H" marginSize={3} /></div><b>{directTextMode ? 'Direct Offline Medical ID' : (form.enabled ? 'Active' : 'Disabled')}</b><p>{directTextMode ? 'The QR encodes essential medical data directly—scannable on any smartphone camera without internet.' : 'The QR contains only a secure random link—not medical information.'}</p><div className="qr-actions"><button className="button secondary" onClick={download}><Download size={16} />Download QR</button><button className="button secondary" onClick={() => window.print()}><Printer size={16} />Print</button>{!directTextMode && <><button className="button secondary" onClick={regenerate} disabled={busy}><RefreshCw size={16} />Generate New QR</button>{form.enabled && <button className="button danger-button" onClick={disable} disabled={busy}><ShieldOff size={16} />Disable Emergency QR</button>}</>}</div></> : <p>Save your profile to generate its secure QR.</p>}</aside></div>
   </section>;
 }
