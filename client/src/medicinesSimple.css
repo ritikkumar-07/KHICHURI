@@ -1,0 +1,80 @@
+.medicine-assistant {
+  margin-bottom: 18px;
+}
+
+.medicine-assistant .medicine-search {
+  margin: 14px 0 0;
+}
+
+.medicine-ai-answer {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid #d8d2c8;
+  border-radius: 10px;
+  background: #f7f4ef;
+}
+
+.medicine-ai-answer > div {
+  color: #38342f;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.medicine-ai-answer small {
+  display: block;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e2dcd3;
+  color: #817b72;
+}
+
+.medicine-ai-result ul {
+  margin: 8px 0 18px;
+  padding-left: 20px;
+  color: #5f5b55;
+  line-height: 1.6;
+}
+
+.medicine-result-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.medicine-result-facts p {
+  margin: 0;
+  padding: 12px;
+  border-radius: 9px;
+  background: #f7f4ef;
+}
+
+.medicine-result-facts span,
+.medicine-result-facts b,
+.medicine-result-disclaimer {
+  display: block;
+}
+
+.medicine-result-facts span,
+.medicine-result-disclaimer {
+  color: #817b72;
+  font-size: 10px;
+}
+
+.medicine-result-facts b {
+  margin-top: 4px;
+}
+
+.medicine-result-disclaimer {
+  margin-top: 14px;
+}
+
+@media (max-width: 600px) {
+  .medicine-assistant .medicine-search > div {
+    align-items: stretch;
+  }
+
+  .medicine-result-facts {
+    grid-template-columns: 1fr;
+  }
+}
