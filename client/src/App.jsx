@@ -42,7 +42,6 @@ import { ReportSimplifier } from "./components/reports/ReportSimplifier";
 import { HealthTracker } from "./components/health/HealthTracker";
 import { MedicineSafety } from "./components/medicines/MedicineSafety";
 import { MedicineReminderWatcher } from "./components/medicines/MedicineReminderWatcher";
-import { WomensHealth } from "./components/womensHealth/WomensHealth";
 import { CareCircle } from "./components/careCircle/CareCircle";
 import { LoginPage } from "./components/auth/LoginPage";
 import { AdminPage } from "./components/admin/AdminPage";
@@ -101,17 +100,15 @@ export const VIEW_TO_PATH = {
 
 // Feature card definitions [label, description, Icon, path, colorClass]
 const features = [
-  ["AI Health Check", "Describe symptoms and receive thoughtful guidance.", Mic, PATHS.voiceCheck, "blue"],
-  ["Nearby Facilities", "Find hospitals and emergency care near you.", Map, PATHS.facilities, "green"],
-  ["Emergency SOS", "Request urgent support with your location.", ShieldAlert, PATHS.sos, "red"],
-  ["Blood Bank", "Live blood inventory and availability.", Droplet, PATHS.bloodBank, "red"],
-  ["Report Simplifier", "Understand complex medical jargon with AI.", FileText, PATHS.reportReader, "purple"],
   ["Health Tracker", "Track your health and recovery progress over time.", HeartPulse, PATHS.healthTracker, "green"],
-  ["Medicines", "Search medicines, understand their uses and manage your medicine reminders.", Pill, PATHS.medicineSafety, "amber"],
-  ["Women's Health", "Track your cycle, symptoms and women's health over time.", CalendarHeart, PATHS.womensHealth, "blue"],
-  ["Care Circle", "Keep your family's important health information together.", HeartHandshake, PATHS.careCircle, "green"],
+  ["Report Simplifier", "Understand complex medical jargon with AI.", FileText, PATHS.reportReader, "green"],
+  ["Nearby Facilities", "Find hospitals and emergency care near you.", Map, PATHS.facilities, "green"],
+  ["Care Circle", "Keep your family's important health information together.", HeartHandshake, PATHS.careCircle, "red"],
   ["Emergency QR", "Share critical health information safely during an emergency.", QrCode, PATHS.emergencyQr, "red"],
-  ["Offline First Aid", "Essential emergency guides, ready when offline.", BookOpen, PATHS.firstAid, "amber"]
+  ["Emergency SOS", "Request urgent support with your location.", ShieldAlert, PATHS.sos, "red"],
+  ["Medicines", "Search medicines, understand their uses and manage your medicine reminders.", Pill, PATHS.medicineSafety, "amber"],
+  ["Blood Bank", "Live blood inventory and availability.", Droplet, PATHS.bloodBank, "amber"],
+  ["First Aid", "Essential emergency guides, ready when offline.", BookOpen, PATHS.firstAid, "amber"]
 ];
 
 // ---------------------------------------------------------------------------
@@ -629,14 +626,6 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <HealthTracker onNavigate={handleNavigate} />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path={PATHS.womensHealth}
-            element={
-              <ProtectedRoute>
-                <WomensHealth onNavigate={handleNavigate} />
               </ProtectedRoute>
             }
           />

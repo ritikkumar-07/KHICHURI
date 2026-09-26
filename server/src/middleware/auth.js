@@ -15,6 +15,7 @@ export async function requireAuth(req, res, next) {
       id: 'demo-user-1',
       email: 'demo@sanjeevani.health',
       app_metadata: { role: 'user' },
+      user_metadata: { role: 'user' },
     };
     return next();
   }
@@ -24,6 +25,7 @@ export async function requireAuth(req, res, next) {
       id: 'demo-admin-1',
       email: 'admin@sanjeevani.health',
       app_metadata: { role: 'hospital_admin' },
+      user_metadata: { role: 'hospital_admin' },
     };
     return next();
   }
@@ -63,7 +65,8 @@ export async function requireAuth(req, res, next) {
 }
 
 export function requireHospitalAdmin(req, res, next) {
-  if (req.user?.app_metadata?.role !== 'hospital_admin') {
+  const role = req.user?.user_metadata?.role || req.user?.app_metadata?.role;
+  if (role !== 'hospital_admin') {
     return res.status(403).json({ success: false, message: 'Hospital administrator access required.' });
   }
   next();

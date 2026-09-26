@@ -18,12 +18,13 @@ export function LoginPage({ initialMode = null, onSuccess, onCancel }) {
     event.preventDefault(); setBusy(true); setMessage('');
     if (!authConfigured) { setMessage('Supabase authentication is not configured.'); setBusy(false); return; }
     const result = creating
-      ? (signUp ? await signUp(email, password, { full_name: name }) : await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } }))
+      ? (signUp ? await signUp(email, password, { full_name: name, role: mode === 'admin' ? 'hospital_admin' : 'user' }) : await supabase.auth.signUp({ email, password, options: { data: { full_name: name, role: mode === 'admin' ? 'hospital_admin' : 'user' } } }))
       : (signIn ? await signIn(email, password) : await supabase.auth.signInWithPassword({ email, password }));
     if (result.error) { setMessage(result.error.message); setBusy(false); return; }
     if (creating && !result.data.session) { setMessage('Account created. Check your email to confirm it, then sign in.'); setCreating(false); setBusy(false); return; }
     const user = result.data.user;
-    if (mode === 'admin' && user?.app_metadata?.role !== 'hospital_admin') {
+    const userRole = user?.user_metadata?.role || user?.app_metadata?.role;
+    if (mode === 'admin' && userRole !== 'hospital_admin') {
       await supabase.auth.signOut();
       setMessage('This account is not authorized as a hospital administrator.');
       setBusy(false); return;

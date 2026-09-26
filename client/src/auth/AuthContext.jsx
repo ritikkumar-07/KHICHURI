@@ -46,16 +46,16 @@ export function AuthProvider({ children }) {
     return supabase.auth.signOut();
   };
 
-  const value = useMemo(
-    () => ({
-      session,
-      user: session?.user || null,
-      loading,
-      isHospitalAdmin: session?.user?.app_metadata?.role === 'hospital_admin',
-      signUp,
-      signIn,
-      signOut,
-    }),
+    const value = useMemo(
+      () => ({
+        session,
+        user: session?.user || null,
+        loading,
+        isHospitalAdmin: session?.user?.user_metadata?.role === 'hospital_admin' || session?.user?.app_metadata?.role === 'hospital_admin',
+        signUp,
+        signIn,
+        signOut,
+      }),
     [session, loading]
   );
 

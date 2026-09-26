@@ -170,6 +170,7 @@ export async function triageSymptoms(symptoms, language = 'English') {
     `Analyze these patient symptoms: "${symptoms}" in ${language}.`,
     ``,
     `Determine clinical urgency strictly as:`,
+    `- "NONE": If the input contains no medical symptoms, injuries, or health-related queries (e.g. general chat, greetings, random noise).`,
     `- "RED": Critical / severe emergency (immediate emergency care needed)`,
     `- "YELLOW": Moderate / non-emergency (clinic evaluation within 24-48h)`,
     `- "GREEN": Mild / negligible (home rest, hydration, monitoring)`,
@@ -179,8 +180,8 @@ export async function triageSymptoms(symptoms, language = 'English') {
     `Return ONLY a valid JSON object without markdown fences matching this schema:`,
     `{`,
     `  "isFinalVerdict": true,`,
-    `  "alertLevel": "RED" | "YELLOW" | "GREEN",`,
-    `  "summary": "string explaining what the symptoms could indicate",`,
+    `  "alertLevel": "RED" | "YELLOW" | "GREEN" | "NONE",`,
+    `  "summary": "string explaining what the symptoms could indicate, or a polite message if non-medical asking to describe symptoms",`,
     `  "immediateActions": ["specific first-aid step to do right now 1", "specific first-aid step to do right now 2"],`,
     `  "recommendedAction": "guidance on where to seek care (e.g., ER, clinic, self-care)",`,
     `  "voiceResponse": "spoken guidance matching the active language (${language}: English, Hindi, or Bengali)"`,
@@ -195,6 +196,8 @@ export async function triageSymptoms(symptoms, language = 'English') {
       let validAlert = "YELLOW";
       if (rawAlert.includes("RED") || rawAlert.includes("লাল") || rawAlert.includes("জরুরি")) {
         validAlert = "RED";
+      } else if (rawAlert.includes("NONE") || rawAlert.includes("কোনোটি নয়") || rawAlert === "NOT_MEDICAL") {
+        validAlert = "NONE";
       } else if (rawAlert.includes("GREEN") || rawAlert.includes("সবুজ")) {
         validAlert = "GREEN";
       } else if (rawAlert.includes("YELLOW") || rawAlert.includes("হলুদ")) {

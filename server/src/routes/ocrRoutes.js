@@ -126,7 +126,9 @@ Evaluation Rules:
   "summary": "2-3 clear, patient-friendly sentences explaining the overall condition in everyday words.",
   "keyFindings": ["Finding 1 with plain explanation", "Finding 2 with plain explanation"],
   "abnormalParameters": ["Hemoglobin: 10.4 g/dL (LOW, Normal: 13.0 - 17.0) - Mild anemia", "Fasting Glucose: 124 mg/dL (HIGH, Normal: 70 - 99) - Elevated blood sugar / prediabetic range"],
-  "recommendations": ["Actionable step 1", "Actionable step 2"]
+  "recommendations": ["Actionable step 1", "Actionable step 2"],
+  "conditions": ["Anemia", "Type 2 Diabetes"],
+  "medicines": ["Metformin 500mg", "Aspirin 75mg"]
 }`;
 
     const messages = [
@@ -181,6 +183,8 @@ Evaluation Rules:
    - "keyFindings": An array of 2 to 5 specific, bulleted observations found in THIS document (mention the actual parameters and what they mean in plain English).
    - "abnormalParameters": An array of any values that are high, low, or out of the standard reference range (include the exact test name, the patient's value, and standard normal range). If all values are normal, return an empty array [].
    - "recommendations": An array of practical, non-alarmist next steps (e.g., diet tips, questions to ask the doctor, follow-up tests).
+   - "conditions": An array of any diagnosed or mentioned medical conditions (e.g. ["Anemia", "Type 2 Diabetes"]). Empty array if none.
+   - "medicines": An array of any prescribed or mentioned medicines (e.g. ["Metformin 500mg", "Aspirin 75mg"]). Empty array if none.
 
 Return STRICT JSON matching this format:
 {
@@ -190,7 +194,9 @@ Return STRICT JSON matching this format:
   "summary": "Your blood test results show an overall healthy blood profile with normal red and white cell counts.",
   "keyFindings": ["Hemoglobin is 14.2 g/dL, which is within the healthy range.", "White blood cell count is normal, indicating no active infection."],
   "abnormalParameters": [],
-  "recommendations": ["Maintain balanced nutrition and stay well hydrated.", "Follow up with your doctor during your next routine checkup."]
+  "recommendations": ["Maintain balanced nutrition and stay well hydrated.", "Follow up with your doctor during your next routine checkup."],
+  "conditions": [],
+  "medicines": []
 }`;
 
     const candidateTextModels = await getActiveGroqTextModels(groq);

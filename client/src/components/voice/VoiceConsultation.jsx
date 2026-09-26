@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Mic, Square, VolumeX } from "lucide-react";
 import { useVoiceSynthesis } from "../../hooks/useVoiceSynthesis";
 import { useVoiceRecorder } from "../../hooks/useVoiceRecorder";
@@ -22,13 +22,37 @@ export function VoiceConsultation({ onSpeechResult, language = "English", spoken
     }
   }, [spokenText, language, speak]);
 
+  const audioContextRef = useRef(null);
+  const animationFrameRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const cleanupAudioAnalysis = useCallback(() => {
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current.close().catch(console.error);
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => cleanupAudioAnalysis();
+  }, [cleanupAudioAnalysis]);
+
+  const stopRecording = useCallback(async () => {
+    setIsListening(false);
+    cleanupAudioAnalysis();
+    const audioBlob = await voiceRecorder.stop();
+    if (audioBlob && onSpeechResult) {
+      onSpeechResult(audioBlob);
+    }
+  }, [voiceRecorder, onSpeechResult, cleanupAudioAnalysis]);
+
   const handleToggleListen = useCallback(async () => {
     if (isListening || voiceRecorder.recording) {
-      setIsListening(false);
-      const audioBlob = await voiceRecorder.stop();
-      if (audioBlob && onSpeechResult) {
-        onSpeechResult(audioBlob);
-      }
+      await stopRecording();
     } else {
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
@@ -37,12 +61,47 @@ export function VoiceConsultation({ onSpeechResult, language = "English", spoken
       setIsListening(true);
       try {
         await voiceRecorder.start(language);
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioContextRef.current = audioContext;
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        let lastAudioTime = Date.now();
+
+        const checkAudioLevel = () => {
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const averageVolume = sum / dataArray.length;
+
+          if (averageVolume > 10) {
+            lastAudioTime = Date.now();
+          }
+
+          if (Date.now() - lastAudioTime >= 3000) {
+            stopRecording();
+            return;
+          }
+          
+          animationFrameRef.current = requestAnimationFrame(checkAudioLevel);
+        };
+        
+        animationFrameRef.current = requestAnimationFrame(checkAudioLevel);
       } catch (err) {
         console.error("Failed to start voice recorder:", err);
         setIsListening(false);
+        cleanupAudioAnalysis();
       }
     }
-  }, [isListening, voiceRecorder, onSpeechResult, language, stop]);
+  }, [isListening, voiceRecorder, language, stop, stopRecording, cleanupAudioAnalysis]);
 
   return (
     <div className="voice-consultation-container flex flex-col items-center gap-4 p-4">

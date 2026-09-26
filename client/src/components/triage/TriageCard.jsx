@@ -5,7 +5,7 @@ function TriageCard({ result, language = "English" }) {
   if (!result) return null;
 
   const rawAlert = String(result.alertLevel || "").trim().toUpperCase();
-  const isFinalAlert = ["RED", "YELLOW", "GREEN"].includes(rawAlert);
+  const isFinalAlert = ["RED", "YELLOW", "GREEN", "NONE"].includes(rawAlert);
 
   // Enter in-progress state ONLY if not a final alert and explicitly IN_PROGRESS / not finalized
   const isInProgress = !isFinalAlert && (rawAlert === "IN_PROGRESS" || result.isFinalVerdict === false);
@@ -44,6 +44,24 @@ function TriageCard({ result, language = "English" }) {
     result.language === "Bengali" || result.language === "bn-IN" ||
     Boolean(summary && /[\u0980-\u09FF]/.test(summary)) ||
     Boolean(voiceAdvice && /[\u0980-\u09FF]/.test(voiceAdvice));
+
+  if (alertLevel === "NONE") {
+    return (
+      <section className="panel triage-card" id="triage-result" aria-live="polite">
+        <div className="panel-head">
+          <span>AI DOCTOR CONSULTATION</span>
+          <small>Non-Medical Input</small>
+        </div>
+        <div style={{ marginTop: "16px", padding: "16px", background: "#fdfcfb", border: "1px solid #d8d2c8", borderRadius: "12px", display: "flex", gap: "12px", alignItems: "flex-start" }}>
+          <Volume2 size={24} style={{ color: "#817b72", flexShrink: 0 }} />
+          <div>
+             <b style={{ fontSize: "14px", color: "#3a3530" }}>{isBengali ? "কোনো চিকিৎসাগত সমস্যা শনাক্ত হয়নি" : "No medical issue detected"}</b>
+             <p style={{ marginTop: "4px", fontSize: "14px", color: "#4a453e", lineHeight: "1.5" }}>{summary}</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="panel triage-card" id="triage-result" aria-live="polite">

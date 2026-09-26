@@ -17,6 +17,7 @@ import {
   Stethoscope,
   Info,
   CircleCheck,
+  Plus,
 } from "lucide-react";
 import { api } from "../../services/api";
 import jsPDF from "jspdf";
@@ -29,6 +30,8 @@ export function ReportSimplifier({ language = "English" }) {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [savingToTracker, setSavingToTracker] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
     setError("");
@@ -108,6 +111,45 @@ export function ReportSimplifier({ language = "English" }) {
     setFile(null);
     setError("");
     setLoading(false);
+    setSaveSuccess(false);
+  };
+
+  const handleAddToHealthTracker = async () => {
+    if (!reportData) return;
+    const conditions = reportData.conditions || [];
+    const medicines = reportData.medicines || [];
+    
+    if (conditions.length === 0 && medicines.length === 0) {
+      setError("No medical conditions or medicines were identified in this report to add.");
+      return;
+    }
+    
+    setSavingToTracker(true);
+    setSaveSuccess(false);
+    
+    try {
+      for (const condition of conditions) {
+        await api.healthTracker.addHistory({
+          category: 'Condition',
+          title: condition,
+          startDate: new Date().toISOString().split('T')[0]
+        });
+      }
+      for (const medicine of medicines) {
+        await api.healthTracker.addHistory({
+          category: 'Medicine',
+          title: medicine,
+          startDate: new Date().toISOString().split('T')[0]
+        });
+      }
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 5000);
+    } catch (err) {
+      console.error("Failed to add to health tracker:", err);
+      setError("Failed to save to Health Tracker. Please try again.");
+    } finally {
+      setSavingToTracker(false);
+    }
   };
 
   const handleDownloadPDF = () => {
@@ -486,7 +528,7 @@ export function ReportSimplifier({ language = "English" }) {
             {(!reportData?.keyFindings?.length && !reportData?.abnormalParameters?.length) && renderFormattedText(result)}
           </div>
           
-          <div className="report-reader-actions" style={{ display: "flex", gap: "12px", padding: "20px 32px 32px", justifyContent: "flex-start" }}>
+          <div className="report-reader-actions" style={{ display: "flex", flexWrap: "wrap", gap: "12px", padding: "20px 32px 32px", justifyContent: "flex-start", alignItems: "center" }}>
             <button 
               onClick={handleDownloadPDF}
               style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#ecfdf5", color: "#065f46", border: "1px solid #6ee7b7", padding: "8px 16px", borderRadius: "8px", fontSize: "12px", fontWeight: "600", cursor: "pointer", transition: "all 0.2s" }}
@@ -494,11 +536,25 @@ export function ReportSimplifier({ language = "English" }) {
               <Download size={16} style={{ color: "#047857" }} /> Download PDF
             </button>
             <button 
+              onClick={handleAddToHealthTracker}
+              disabled={savingToTracker}
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 mt-4"
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px", backgroundColor: "#2563eb", color: "#ffffff", border: "none", padding: "8px 16px", borderRadius: "8px", fontSize: "12px", fontWeight: "600", cursor: "pointer", transition: "all 0.2s", marginTop: 0 }}
+            >
+              {savingToTracker ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <Plus size={16} />}
+              {savingToTracker ? "Saving..." : "Add to Health Tracker"}
+            </button>
+            <button 
               onClick={handleReset}
               style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#f5f5f4", color: "#44403c", border: "1px solid #d6d3d1", padding: "8px 16px", borderRadius: "8px", fontSize: "12px", fontWeight: "500", cursor: "pointer", transition: "all 0.2s" }}
             >
               <RotateCcw size={16} style={{ color: "#57534e" }} /> Analyze Another Document
             </button>
+            {saveSuccess && (
+              <span style={{ fontSize: "12px", color: "#047857", fontWeight: "500", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <CheckCircle2 size={14} /> Added to Health Tracker
+              </span>
+            )}
           </div>
           
           <div className="disclaimer" style={{ margin: "0 32px 32px", borderTop: "1px solid #eee9e1", paddingTop: "20px", fontSize: "11px", color: "#817b72" }}>
