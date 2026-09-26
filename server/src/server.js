@@ -23,36 +23,56 @@ import { configureEmergencySocket } from './sockets/emergencySocket.js';
 // Shared CORS config — used by both app.use() and OPTIONS preflight handler
 // so both always return identical Access-Control-Allow-* headers.
 // ---------------------------------------------------------------------------
+// const corsOptions = {
+//   origin: (origin, callback) => {
+//     const allowedOrigins = [
+//       'http://localhost:5173',
+//       'http://localhost:5174',
+//       'http://127.0.0.1:5173',
+//       'http://127.0.0.1:5174',
+//       env.clientUrl
+//     ];
+//     if (
+//       !origin ||
+//       allowedOrigins.includes(origin) ||
+//       /^http:\/\/localhost(:\d+)?$/.test(origin) ||
+//       /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)
+//     ) {
+//       callback(null, true);
+//     } else {
+//       callback(new Error('Not allowed by CORS'));
+//     }
+//   },
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: [
+//     'Content-Type',
+//     'Authorization',
+//     'Accept',
+//     'x-health-owner-key',   // required by /api/health-tracker endpoints
+//   ],
+//   exposedHeaders: ['Content-Length'],
+//   maxAge: 600,              // cache preflight 10 min — reduces OPTIONS traffic
+// };
+
 const corsOptions = {
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:5174',
-      env.clientUrl
-    ];
-    if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      /^http:\/\/localhost(:\d+)?$/.test(origin) ||
-      /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+    'https://sanjeevani-sooty.vercel.app',
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
     'Accept',
-    'x-health-owner-key',   // required by /api/health-tracker endpoints
+    'x-health-owner-key',
   ],
   exposedHeaders: ['Content-Length'],
-  maxAge: 600,              // cache preflight 10 min — reduces OPTIONS traffic
+  maxAge: 600,
 };
 
 // const app = express(), http = createServer(app), io = new Server(http, {
@@ -68,6 +88,21 @@ const app = express();
 
 const http = createServer(app);
 
+// const io = new Server(http, {
+//   cors: {
+//     origin: [
+//       'http://localhost:5173',
+//       'http://localhost:5174',
+//       'http://127.0.0.1:5173',
+//       'http://127.0.0.1:5174',
+//       env.clientUrl
+//     ],
+//     methods: ['GET', 'POST'],
+//     credentials: true,
+//   },
+//   transports: ['polling', 'websocket'],
+// });
+
 const io = new Server(http, {
   cors: {
     origin: [
@@ -75,7 +110,7 @@ const io = new Server(http, {
       'http://localhost:5174',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:5174',
-      env.clientUrl
+      'https://sanjeevani-sooty.vercel.app',
     ],
     methods: ['GET', 'POST'],
     credentials: true,
@@ -87,7 +122,7 @@ const io = new Server(http, {
 // CRITICAL: both calls must share corsOptions, otherwise the preflight
 // response will advertise different headers than the actual response.
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+// app.options('*', cors(corsOptions));
 app.use(express.json({ limit: "30mb" }));
 app.use(express.urlencoded({ extended: true, limit: "30mb" }));
 app.get('/api/health', (_q, r) => r.json({ success: true, data: { status: 'operational', database: databaseMode, demoMode: databaseMode === 'memory' } }));
