@@ -141,17 +141,43 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ success: false, message: 'The server could not complete that request. Please try again.' });
 });
 configureEmergencySocket(io);
-connectDb().finally(() => {
-  const port = process.env.PORT || env.port || 5000;
-  const server = http.listen(port, () => console.info(`Sanjeevani API running strictly on port ${port}`));
+// connectDb().finally(() => {
+//   const port = process.env.PORT || env.port || 5000;
+//   const server = http.listen(port, () => console.info(`Sanjeevani API running strictly on port ${port}`));
   
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`FATAL: Port ${port} is already in use. Please kill the process using this port before starting.`);
-      process.exit(1);
-    } else {
-      console.error('Server error:', err);
-      process.exit(1);
-    }
-  });
+//   server.on('error', (err) => {
+//     if (err.code === 'EADDRINUSE') {
+//       console.error(`FATAL: Port ${port} is already in use. Please kill the process using this port before starting.`);
+//       process.exit(1);
+//     } else {
+//       console.error('Server error:', err);
+//       process.exit(1);
+//     }
+//   });
+// });
+
+// configureEmergencySocket(io);
+
+// Start the HTTP server immediately.
+// Do not make server startup depend on MongoDB.
+const port = process.env.PORT || env.port || 5000;
+
+const server = http.listen(port, () => {
+  console.info(`Sanjeevani API running on port ${port}`);
 });
+
+server.on('error', (err) => {
+  console.error('Server error:', err);
+});
+
+// Connect to MongoDB separately.
+// A database connection failure should NOT crash the Vercel function.
+connectDb()
+  .then(() => {
+    console.info('MongoDB connected successfully');
+  })
+  .catch((error) => {
+    console.error('MongoDB connection failed:', error?.message || error);
+  });
+
+export default server;
