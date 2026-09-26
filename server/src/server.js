@@ -55,9 +55,28 @@ const corsOptions = {
   maxAge: 600,              // cache preflight 10 min — reduces OPTIONS traffic
 };
 
-const app = express(), http = createServer(app), io = new Server(http, {
+// const app = express(), http = createServer(app), io = new Server(http, {
+//   cors: {
+//     origin: ['http://localhost:5173', 'http://localhost:5174'],
+//     methods: ['GET', 'POST'],
+//     credentials: true,
+//   },
+//   transports: ['polling', 'websocket'],
+// });
+
+const app = express();
+
+const http = createServer(app);
+
+const io = new Server(http, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:5174'],
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+      env.clientUrl
+    ],
     methods: ['GET', 'POST'],
     credentials: true,
   },
