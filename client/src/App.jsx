@@ -55,6 +55,7 @@ import { useGeolocation } from "./hooks/useGeolocation";
 import { useVoiceRecorder } from "./hooks/useVoiceRecorder";
 import { useVoiceSynthesis } from "./hooks/useVoiceSynthesis";
 import { useSocket } from "./hooks/useSocket";
+import { clearSosSession, loadSosSession, saveSosSession } from "./services/sosSession";
 
 // Route path constants — single source of truth
 export const PATHS = {
@@ -369,7 +370,7 @@ function SystemStatusPage({ geo, socket }) {
         <p><i /> API fallback-safe</p>
         <p><i /> GPS {geo?.error ? "demo active" : "available"}</p>
         <p><i /> Voice recorder {window.MediaRecorder ? "available" : "unavailable"}</p>
-        <p><i /> Socket {socket ? "connected" : "local demo"}</p>
+        <p><i /> Socket {socket?.connected ? "connected" : "local demo"}</p>
       </div>
       <p className="disclaimer">Demo mode keeps SANJEEVANI useful without a database, API key, GPS, microphone, or socket connection.</p>
     </section>
@@ -402,8 +403,58 @@ export default function App() {
   const activeGeo = helperGeo || geo;
   const voice = useVoiceRecorder();
   const tts = useVoiceSynthesis();
-  const onSocket = useCallback((nextAlert) => setAlert(nextAlert), []);
+  const onSocket = useCallback((nextAlert) => {
+    if (!nextAlert?.id) return;
+
+    setAlert((current) => {
+      if (current?.id && current.id !== nextAlert.id) return current;
+      if (
+        current &&
+        Number(nextAlert.version || 0) < Number(current.version || 0)
+      ) {
+        return current;
+      }
+      return nextAlert;
+    });
+
+    if (["resolved", "cancelled"].includes(nextAlert.status)) {
+      clearSosSession();
+    }
+  }, []);
   const socket = useSocket(onSocket);
+  const { subscribe } = socket;
+
+  useEffect(() => {
+    const saved = loadSosSession();
+    if (!saved) return undefined;
+
+    let cancelled = false;
+    api
+      .sosStatus(saved.id, saved.accessToken)
+      .then((nextAlert) => {
+        if (cancelled) return;
+        setAlert((current) => {
+          if (
+            current?.id === nextAlert.id &&
+            Number(current.version || 0) > Number(nextAlert.version || 0)
+          ) {
+            return current;
+          }
+          return nextAlert;
+        });
+        subscribe(nextAlert.id, saved.accessToken);
+        if (["resolved", "cancelled"].includes(nextAlert.status)) {
+          clearSosSession();
+        }
+      })
+      .catch(() => {
+        if (!cancelled) clearSosSession();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [subscribe]);
 
   useEffect(() => {
     cacheFirstAid();
@@ -491,6 +542,8 @@ export default function App() {
       conditionSummary: triage?.summary || "Emergency assistance requested"
     });
     setAlert(nextAlert);
+    saveSosSession(nextAlert);
+    subscribe(nextAlert.id, nextAlert.accessToken);
     navigate(PATHS.sos);
   };
 
@@ -543,7 +596,7 @@ export default function App() {
     <div className="app-shell">
       {user && <MedicineReminderWatcher />}
       <AccessibilitySettings />
-      <Navbar online={online && socket} user={user} isHospitalAdmin={isHospitalAdmin} onSignOut={signOut} />
+      <Navbar online={online && socket.connected} user={user} isHospitalAdmin={isHospitalAdmin} onSignOut={signOut} />
       <main className="page-shell">
         {pathname !== PATHS.dashboard && pathname !== PATHS.login && <BackButton onBack={() => navigate(-1)} />}
         <Routes>

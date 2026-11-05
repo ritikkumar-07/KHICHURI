@@ -15,9 +15,6 @@ const sanitize = (val) => {
   return str.trim();
 };
 
-const DEFAULT_URL = 'https://gdwhqlkurweorigeuzdd.supabase.co';
-const DEFAULT_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdkd2hxbGt1cndlb3JpZ2V1emRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzMjg0ODMsImV4cCI6MjEwNTkwNDQ4M30.QzvEB434ida3djFQb4mIkBdRf--xOGvVhQtMvHOP_YE';
-
 const isPlaceholder = (val) =>
   !val ||
   val.includes('your-project-id') ||
@@ -26,11 +23,11 @@ const isPlaceholder = (val) =>
 const rawUrl = sanitize(import.meta.env.VITE_SUPABASE_URL);
 const rawKey = sanitize(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
-const url = (!isPlaceholder(rawUrl)) ? rawUrl : DEFAULT_URL;
-const anonKey = (!isPlaceholder(rawKey)) ? rawKey : DEFAULT_ANON_KEY;
+const url = isPlaceholder(rawUrl) ? '' : rawUrl;
+const anonKey = isPlaceholder(rawKey) ? '' : rawKey;
 
 // True when valid Supabase credentials are ready for authentication
-export const authConfigured = Boolean(url && anonKey && !isPlaceholder(url));
+export const authConfigured = Boolean(url && anonKey);
 
 // General Supabase configuration status flag
 export const isSupabaseConfigured = authConfigured;

@@ -25,3 +25,10 @@ test('trusted hospital_admin metadata permits admin access', () => {
   assert.equal(continued, true);
   assert.equal(res.statusCode, 200);
 });
+
+test('user-controlled user_metadata cannot grant admin access', () => {
+  const res = response(); let continued = false;
+  requireHospitalAdmin({ user: { app_metadata: { role: 'user' }, user_metadata: { role: 'hospital_admin' } } }, res, () => { continued = true; });
+  assert.equal(continued, false);
+  assert.equal(res.statusCode, 403);
+});

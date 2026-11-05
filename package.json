@@ -7,7 +7,7 @@
     "start": "concurrently \"npm --prefix server start\" \"npm --prefix client start\""
   },
   "devDependencies": {
-    "concurrently": "^9.2.4"
+    "concurrently": "^10.0.6"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2"

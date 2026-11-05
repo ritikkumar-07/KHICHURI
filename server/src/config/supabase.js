@@ -4,17 +4,19 @@ import { env } from './env.js';
 /**
  * Validates if Supabase credentials are provided and not dummy placeholders
  */
+const hasPlaceholderValues = Boolean(
+  env.supabaseUrl.includes('your-project-id') ||
+    env.supabaseAnonKey.includes('your-supabase-anon-key')
+);
+
 export const isSupabaseConfigured = Boolean(
-  env.supabaseUrl &&
-  env.supabaseAnonKey &&
-  !env.supabaseUrl.includes('your-project-id') &&
-  !env.supabaseAnonKey.includes('your-supabase-anon-key')
+  env.supabaseUrl && env.supabaseAnonKey && !hasPlaceholderValues
 );
 
 /**
  * Server-side Supabase client slot for PostgreSQL queries, RLS policies, and Auth verification.
  */
-export const supabase = (env.supabaseUrl && env.supabaseAnonKey)
+export const supabase = isSupabaseConfigured
   ? createClient(env.supabaseUrl, env.supabaseAnonKey, {
       auth: {
         persistSession: false,
@@ -31,12 +33,26 @@ export async function checkSupabaseConnection() {
     return { configured: false, status: 'unconfigured' };
   }
   try {
-    const { error } = await supabase.auth.getSession();
-    if (error) {
-      return { configured: true, status: 'error', message: error.message };
+    const response = await fetch(
+      `${env.supabaseUrl.replace(/\/$/, '')}/auth/v1/health`,
+      {
+        headers: { apikey: env.supabaseAnonKey },
+        signal: AbortSignal.timeout(4000),
+      }
+    );
+    if (!response.ok) {
+      return {
+        configured: true,
+        status: 'error',
+        message: `Supabase health check returned ${response.status}`,
+      };
     }
     return { configured: true, status: 'connected' };
   } catch (error) {
-    return { configured: true, status: 'error', message: error?.message || 'Connection check failed' };
+    return {
+      configured: true,
+      status: 'error',
+      message: error?.message || 'Connection check failed',
+    };
   }
 }

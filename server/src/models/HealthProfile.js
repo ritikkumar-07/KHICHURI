@@ -70,7 +70,8 @@ const historySchema = new Schema({
   purpose: { type: String, default: '', maxlength: 500 },
   prescribedBy: { type: String, default: '', maxlength: 160 },
   reminder: { type: medicineReminderSchema, default: undefined },
-  associatedPlanId: String
+  associatedPlanId: String,
+  archivedAt: { type: Date, default: null }
 }, { timestamps: true });
 
 const careCircleMemberSchema = new Schema({

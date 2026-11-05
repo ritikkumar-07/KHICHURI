@@ -3,6 +3,7 @@ import axios from 'axios';
 const endpoint = 'https://api.fda.gov/drug/label.json';
 const cache = new Map();
 const cacheMs = 30 * 60 * 1000;
+const maxCacheEntries = 500;
 const source = { name: 'openFDA Drug Labeling', url: 'https://open.fda.gov/apis/drug/label/' };
 
 const cached = key => {
@@ -10,12 +11,20 @@ const cached = key => {
   if (!item || Date.now() - item.savedAt > cacheMs) { cache.delete(key); return null; }
   return item.value;
 };
-const remember = (key, value) => { cache.set(key, { savedAt: Date.now(), value }); return value; };
+const remember = (key, value) => {
+  if (!cache.has(key) && cache.size >= maxCacheEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey) cache.delete(oldestKey);
+  }
+  cache.set(key, { savedAt: Date.now(), value });
+  return value;
+};
 const list = value => Array.isArray(value) ? value.filter(Boolean) : [];
 const first = value => list(value)[0] || '';
 const unique = values => [...new Set(values.filter(Boolean))];
 const text = (record, fields, limit = 12000) => unique(fields.flatMap(field => list(record[field]))).join('\n\n').slice(0, limit);
 const cleanQuery = value => String(value || '').replace(/[^a-zA-Z0-9 .'-]/g, '').trim().slice(0, 80);
+const escapeLucene = value => String(value || '').replace(/([+\-&|!(){}[\]^"~*?:\\/])/g, '\\$1');
 
 function normalizeSummary(record) {
   const open = record.openfda || {};
@@ -73,7 +82,10 @@ export async function searchMedicineLabels(value) {
   const key = `search:${query.toLowerCase()}`;
   const hit = cached(key);
   if (hit) return hit;
-  const term = query.split(/\s+/).join('\\ ');
+  const term = query
+    .split(/\s+/)
+    .map(escapeLucene)
+    .join('\\ ');
   const search = `(openfda.brand_name:${term}* OR openfda.generic_name:${term}* OR openfda.substance_name:${term}*)`;
   const records = await request({ search, limit: 20 });
   const seen = new Set();

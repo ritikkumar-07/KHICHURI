@@ -19,6 +19,7 @@ export function publicEmergencyProfile(emergency) {
 }
 
 router.get('/:token', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
     if (!validToken(req.params.token)) return res.status(404).json({ success: false, message: 'This Emergency QR is invalid or no longer active.' });
     let emergency;

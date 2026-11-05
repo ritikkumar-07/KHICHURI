@@ -7,6 +7,8 @@ import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 export const memoryProfiles = new Map();
+const MAX_PROFILE_BYTES = 8 * 1024 * 1024;
+const profileLocks = new Map();
 const allowedTypes = new Set(['Post-Surgery Recovery', 'Illness Recovery', 'Injury Recovery', 'Chronic Condition', 'General Health', 'Custom']);
 const allowedInputs = new Set(['number', 'scale', 'boolean']);
 const allowedDirections = new Set(['higher', 'lower', 'neutral']);
@@ -21,6 +23,33 @@ const blankWomenHealth = () => ({ setupComplete: false, regularity: '', goals: [
 const blankProfile = key => ({ ownerKey: key, plans: [], history: [], careCircle: [], womensHealth: blankWomenHealth() });
 const json = value => value?.toObject ? value.toObject() : structuredClone(value);
 
+// Serialise read-modify-write requests for a single owner. This prevents
+// concurrent requests from the same account overwriting each other's changes
+// within one server process. Multi-instance deployments still need database
+// level optimistic concurrency.
+function acquireProfileLock(key) {
+  const previous = profileLocks.get(key) || Promise.resolve();
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => held);
+  profileLocks.set(key, tail);
+  tail.finally(() => {
+    if (profileLocks.get(key) === tail) profileLocks.delete(key);
+  });
+
+  return previous.then(() => {
+    let released = false;
+    return () => {
+      if (!released) {
+        released = true;
+        release();
+      }
+    };
+  });
+}
+
 export async function loadProfile(key) {
   if (databaseMode === 'mongo') return HealthProfile.findOneAndUpdate({ ownerKey: key }, { $setOnInsert: { ownerKey: key } }, { new: true, upsert: true });
   if (!memoryProfiles.has(key)) memoryProfiles.set(key, blankProfile(key));
@@ -28,6 +57,20 @@ export async function loadProfile(key) {
 }
 
 export async function saveProfile(profile) {
+  let serialized;
+  try {
+    serialized = JSON.stringify(profile);
+  } catch {
+    serialized = '';
+  }
+
+  if (serialized && Buffer.byteLength(serialized) > MAX_PROFILE_BYTES) {
+    const error = new Error('Health profile is too large.');
+    error.code = 'PROFILE_TOO_LARGE';
+    error.status = 413;
+    throw error;
+  }
+
   if (databaseMode === 'mongo') return profile.save();
   memoryProfiles.set(profile.ownerKey, profile);
   return profile;
@@ -61,7 +104,16 @@ function findItem(items, id) {
   return items.find(item => String(item._id || item.id) === id);
 }
 
-const dateOnly = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+const dateOnly = (value) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+};
 const localToday = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
 const womenData = profile => {
   if (!profile.womensHealth) profile.womensHealth = blankWomenHealth();
@@ -69,14 +121,95 @@ const womenData = profile => {
 };
 const makeId = () => databaseMode === 'mongo' ? new mongoose.Types.ObjectId() : randomUUID();
 const cleanList = (value, maxItems = 20, maxLength = 80) => Array.isArray(value) ? [...new Set(value.map(item => clean(item, maxLength)).filter(Boolean))].slice(0, maxItems) : [];
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
 
-router.use(requireAuth, (req, res, next) => {
+function pageParams(query) {
+  const parsedLimit = Number.parseInt(query?.limit, 10);
+  const parsedOffset = Number.parseInt(query?.offset, 10);
+  const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
+  const offset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
+  return { limit, offset };
+}
+
+function pagePayload(items, { limit, offset, total = items.length }) {
+  return {
+    items,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore: offset + limit < total,
+    },
+  };
+}
+
+router.use(requireAuth, async (req, res, next) => {
   req.ownerKey = req.user.id;
-  next();
+  res.setHeader('Cache-Control', 'no-store');
+
+  try {
+    const release = await acquireProfileLock(req.ownerKey);
+    let released = false;
+    const finish = () => {
+      if (!released) {
+        released = true;
+        release();
+      }
+    };
+    res.once('finish', finish);
+    res.once('close', finish);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.get('/', async (req, res, next) => {
   try { res.json({ success: true, data: json(await loadProfile(req.ownerKey)) }); } catch (error) { next(error); }
+});
+
+router.get('/history', async (req, res, next) => {
+  try {
+    const profile = await loadProfile(req.ownerKey);
+    const includeArchived = req.query.includeArchived === 'true';
+    const history = (profile.history || []).filter(item => includeArchived || !item.archivedAt);
+    const page = pageParams(req.query);
+    const items = history.slice(page.offset, page.offset + page.limit).map(json);
+    res.json({ success: true, data: pagePayload(items, { ...page, total: history.length }) });
+  } catch (error) { next(error); }
+});
+
+router.get('/plans', async (req, res, next) => {
+  try {
+    const profile = await loadProfile(req.ownerKey);
+    const plans = profile.plans || [];
+    const page = pageParams(req.query);
+    const items = plans.slice(page.offset, page.offset + page.limit).map(json);
+    res.json({ success: true, data: pagePayload(items, { ...page, total: plans.length }) });
+  } catch (error) { next(error); }
+});
+
+router.post('/history/:historyId/archive', async (req, res, next) => {
+  try {
+    const profile = await loadProfile(req.ownerKey);
+    const item = findItem(profile.history || [], req.params.historyId);
+    if (!item) return res.status(404).json({ success: false, message: 'History entry not found.' });
+    item.archivedAt = new Date();
+    await saveProfile(profile);
+    return res.json({ success: true, data: json(item) });
+  } catch (error) { return next(error); }
+});
+
+router.post('/history/:historyId/unarchive', async (req, res, next) => {
+  try {
+    const profile = await loadProfile(req.ownerKey);
+    const item = findItem(profile.history || [], req.params.historyId);
+    if (!item) return res.status(404).json({ success: false, message: 'History entry not found.' });
+    item.archivedAt = null;
+    await saveProfile(profile);
+    return res.json({ success: true, data: json(item) });
+  } catch (error) { return next(error); }
 });
 
 const cleanEmergencyList = value => cleanList(value, 12, 160);
@@ -247,7 +380,7 @@ router.put('/history/:historyId/reminder', async (req, res, next) => {
     const profile = await loadProfile(req.ownerKey), item = findItem(profile.history, req.params.historyId), body = req.body || {};
     if (!item || item.category !== 'Medicine') return res.status(404).json({ success: false, message: 'Medicine record not found.' });
     const frequencies = { 'Once Daily': 1, 'Twice Daily': 2, 'Three Times Daily': 3, 'Custom Time': null };
-    if (!(body.frequency in frequencies) || !Array.isArray(body.times)) return res.status(400).json({ success: false, message: 'Choose a valid reminder frequency and time.' });
+    if (!Object.hasOwn(frequencies, body.frequency) || !Array.isArray(body.times)) return res.status(400).json({ success: false, message: 'Choose a valid reminder frequency and time.' });
     const times = [...new Set(body.times.map(value => clean(value, 5)))].sort();
     const expected = frequencies[body.frequency];
     if (!times.length || times.length > 8 || (expected && times.length !== expected) || times.some(value => !/^([01]\d|2[0-3]):[0-5]\d$/.test(value))) return res.status(400).json({ success: false, message: 'Enter the required valid reminder times.' });
@@ -337,6 +470,21 @@ router.delete('/womens-health/appointments/:id', async (req, res, next) => {
   try { const profile = await loadProfile(req.ownerKey), items = womenData(profile).appointments, index = items.findIndex(item => String(item._id || item.id) === req.params.id); if (index < 0) return res.status(404).json({ success: false, message: 'Appointment not found.' }); items.splice(index, 1); await saveProfile(profile); res.json({ success: true, data: { id: req.params.id } }); } catch (error) { next(error); }
 });
 
-router.use((error, _req, res, _next) => { console.error('Health tracker request failed:', error.message); res.status(500).json({ success: false, message: 'The health record could not be saved.' }); });
+router.use((error, _req, res, _next) => {
+  if (res.headersSent) return;
+
+  if (error.code === 'PROFILE_TOO_LARGE') {
+    return res.status(413).json({ success: false, message: 'This health profile has reached the maximum supported size.' });
+  }
+  if (error.name === 'ValidationError' || error.name === 'CastError') {
+    return res.status(400).json({ success: false, message: 'Please check the health record fields and try again.' });
+  }
+  if (error.name === 'VersionError') {
+    return res.status(409).json({ success: false, message: 'This health record was changed by another request. Please reload and try again.' });
+  }
+
+  console.error('Health tracker request failed:', error.message);
+  return res.status(500).json({ success: false, message: 'The health record could not be saved.' });
+});
 
 export default router;

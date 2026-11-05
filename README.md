@@ -2,7 +2,7 @@
 
 ## Current implementation
 
-The application is now a clean JavaScript stack: **Frontend: React + JavaScript + JSX + Vite + CSS**; **Backend: Node.js + Express + JavaScript**; **Database: MongoDB with in-memory fallback**; **Realtime: Socket.io**; **AI: Gemini with deterministic fallback**; **Speech: Groq Whisper with fallback mode**; **PWA: Service Worker + LocalStorage**.
+The application is now a clean JavaScript stack: **Frontend: React + JavaScript + JSX + Vite + CSS**; **Backend: Node.js + Express + JavaScript**; **Database: MongoDB with in-memory fallback**; **Realtime: Socket.io**; **AI: Groq with deterministic safety fallback**; **Speech: Groq Whisper when configured**; **PWA: Service Worker + LocalStorage**.
 
 Run it with `npm install`, `npm --prefix client install`, `npm --prefix server install`, then `npm run dev`. Build with `npm run build`; production preview/start uses `npm start`.
 
@@ -166,13 +166,13 @@ Sanjeevani is a dark, command-centre style health companion for multilingual voi
 
 ## Architecture
 
-`client/` is a Vite + React + TypeScript PWA. `server/` is an Express + TypeScript API with Socket.io. MongoDB, Gemini and Groq Whisper are optional enhancements; the server switches to realistic deterministic demo data and rule-based triage when they are absent.
+`client/` is a Vite + React + JavaScript PWA. `server/` is an Express + JavaScript API with Socket.io. MongoDB and Groq are optional enhancements; the server uses in-memory storage and rule-based safety triage when they are absent. Voice transcription is disabled unless Groq is configured.
 
 ## Features
 
 - English, Hindi and Bengali voice or typed symptom triage
-- Conservative Gemini-powered triage with a complete safety fallback
-- Groq Whisper transcription with graceful fallback transcription
+- Conservative Groq-powered triage with a deterministic red-flag fallback
+- Groq Whisper transcription when configured; no invented patient speech
 - Tactical simulated emergency map with seeded Kolkata hospitals and blood banks
 - Confirmed SOS workflow, real-time demo dispatch events, and ambulance ETA
 - Five first-aid guides cached in local storage and by service worker
@@ -199,27 +199,39 @@ Copy `server/.env.example` to `server/.env` and set optional values:
 
 ```env
 PORT=5000
+NODE_ENV=development
+SERVICE_NAME=sanjeevani-api
+LOG_LEVEL=info
 MONGODB_URI=
-GEMINI_API_KEY=
 GROQ_API_KEY=
 CLIENT_URL=http://localhost:5173
+CORS_ORIGINS=
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
+ALLOW_DEMO_AUTH=false
+ALLOW_MEMORY_DB=false
+RATE_LIMIT_ENABLED=true
+TRUST_PROXY=false
 ```
 
 The Vite client also uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Patient accounts may sign up publicly. Hospital administrators must be created by a trusted project owner and assigned `app_metadata.role = "hospital_admin"`; there is no public admin signup.
 
-No variable is required for demo mode. MongoDB failure enables in-memory seeded facilities; missing Gemini enables keyword safety triage; missing Groq enables a clearly labelled fallback transcription.
+Local demo mode can run without MongoDB or Groq. In production, missing MongoDB/Supabase/HTTPS CORS configuration blocks startup; a configured MongoDB failure is reported as unavailable and fails readiness instead of switching to memory. Set `ALLOW_MEMORY_DB=true` only for a deliberate disposable demo. Missing Groq enables deterministic rule-based triage, and voice transcription returns an unavailable response. Demo bearer tokens are only available outside production when Supabase is unconfigured, or when `ALLOW_DEMO_AUTH=true` is explicitly set.
+
+Production requirements, backups, realtime limitations, and the go-live checklist are documented in [PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md) and [PRODUCTION_READINESS_REPORT.md](PRODUCTION_READINESS_REPORT.md).
 
 ## API and socket events
 
 - `POST /api/voice/transcribe`
 - `POST /api/triage`
 - `GET /api/facilities/nearby?latitude=&longitude=&radius=`
-- `POST /api/sos`, `GET /api/sos/:id`
-- `GET /api/health`
+- `POST /api/sos`, `GET /api/sos/:id` (anonymous callers must use the one-time `accessToken` from the create response)
+- `GET /api/health` (liveness), `GET /api/ready` (configuration and database readiness)
+- `GET /api/health-tracker/history?limit=&offset=&includeArchived=`
+- `GET /api/health-tracker/plans?limit=&offset=`
+- `POST /api/health-tracker/history/:historyId/archive` and `/unarchive`
 
-Socket events are `sos:created`, `sos:update`, and `sos:acknowledged`. SOS dispatch is explicitly simulated in this app.
+Socket events are `sos:created`, `sos:update`, and `sos:acknowledged`. Hospital administrators also send `sos:delivery-ack`. Clients must join `sos:<id>` with `{ id, token }` for anonymous alerts, or authenticate as the owner/admin. SOS dispatch is explicitly simulated in this app.
 
 ## Offline/PWA
 

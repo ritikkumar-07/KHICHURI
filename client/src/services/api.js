@@ -51,9 +51,9 @@ function getOwnerKey() {
 }
 
 // All health-tracker API calls require the x-health-owner-key header
-async function healthRequest(method, url, data) {
+async function healthRequest(method, url, data, params) {
   const headers = { "x-health-owner-key": getOwnerKey() };
-  const response = await client({ method, url, data, headers });
+  const response = await client({ method, url, data, headers, params });
   return response.data?.data ?? response.data;
 }
 
@@ -224,16 +224,15 @@ const api = {
   },
 
   // ------------------------------------------------------------------
-  // Voice transcription (audio blob → Groq Whisper, fallback local)
+  // Voice transcription (audio blob → Groq Whisper)
+  // Never invent symptom text when the provider is unavailable.
   // ------------------------------------------------------------------
-  transcribe: (audio, language) => {
+  transcribe: async (audio, language) => {
     const f = new FormData();
     f.append("audio", audio, "voice.webm");
     f.append("language", language);
-    return unwrap(
-      client.post("/api/voice/transcribe", f),
-      { text: "I have a headache and feel dizzy since this morning.", source: "local fallback" }
-    );
+    const res = await client.post("/api/voice/transcribe", f);
+    return res.data?.data || res.data;
   },
 
   // ------------------------------------------------------------------
@@ -262,9 +261,17 @@ const api = {
       timestamp: new Date().toISOString(),
       urgency: "RED",
       conditionSummary: "Emergency assistance requested",
-      status: "dispatching",
-      etaMinutes: 12,
+      status: "offline",
+      demo: true,
+      etaMinutes: null,
     }),
+
+  sosStatus: async (id, accessToken) => {
+    const response = await client.get(`/api/sos/${encodeURIComponent(id)}`, {
+      headers: accessToken ? { "x-sos-token": accessToken } : {},
+    });
+    return response.data?.data;
+  },
 
   firstAid: () => FIRST_AID,
 
@@ -295,6 +302,10 @@ const api = {
   // ------------------------------------------------------------------
   healthTracker: {
     load:              ()           => healthRequest("get",    "/api/health-tracker"),
+    historyPage:       (params = {}) => healthRequest("get",   "/api/health-tracker/history", null, params),
+    plansPage:         (params = {}) => healthRequest("get",   "/api/health-tracker/plans", null, params),
+    archiveHistory:    (id)         => healthRequest("post",   `/api/health-tracker/history/${id}/archive`),
+    unarchiveHistory:  (id)         => healthRequest("post",   `/api/health-tracker/history/${id}/unarchive`),
     addCareMember:     (data)       => healthRequest("post",   "/api/health-tracker/care-circle", data),
     updateCareMember:  (id, data)   => healthRequest("patch",  `/api/health-tracker/care-circle/${id}`, data),
     deleteCareMember:  (id)         => healthRequest("delete", `/api/health-tracker/care-circle/${id}`),

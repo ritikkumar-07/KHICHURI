@@ -51,7 +51,7 @@ export function AuthProvider({ children }) {
         session,
         user: session?.user || null,
         loading,
-        isHospitalAdmin: session?.user?.user_metadata?.role === 'hospital_admin' || session?.user?.app_metadata?.role === 'hospital_admin',
+        isHospitalAdmin: session?.user?.app_metadata?.role === 'hospital_admin',
         signUp,
         signIn,
         signOut,
